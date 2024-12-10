@@ -26,13 +26,14 @@ static int __init dyn_chr_dev_init(void) {
   printk(KERN_INFO "dyn_chr_dev_init\n");
   if (major) {
     dyn_chr_dev_id = MKDEV(major, 0); // Create a device number with minor 0
-    if(register_chrdev_region(dyn_chr_dev_id, 1, dyn_dev_name) < 0) {
+    if (register_chrdev_region(dyn_chr_dev_id, 1, dyn_dev_name) < 0) {
       printk(KERN_ERR "register_chrdev_region failed\n");
       return -1;
     }
-    printk(KERN_INFO "register_chrdev_region: major=%d minor=%d\n", major, minor);
+    printk(KERN_INFO "register_chrdev_region: major=%d minor=%d\n", major,
+           minor);
   } else {
-    if(alloc_chrdev_region(&dyn_chr_dev_id, 0, 1, dyn_dev_name) < 0) {
+    if (alloc_chrdev_region(&dyn_chr_dev_id, 0, 1, dyn_dev_name) < 0) {
       printk(KERN_ERR "alloc_chrdev_region failed\n");
       return -1;
     }
