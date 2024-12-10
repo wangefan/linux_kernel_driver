@@ -35,8 +35,8 @@ static int __init dyn_chr_dev_init(void) {
 }
 
 /* Exit */
-static void __exit dyn_chr_dev_exit(void) { 
-  printk(KERN_INFO "dyn_chr_dev_init\n"); 
+static void __exit dyn_chr_dev_exit(void) {
+  printk(KERN_INFO "dyn_chr_dev_exit\n");
   unregister_chrdev_region(dyn_chr_dev_id, 1);
 }
 
