@@ -10,8 +10,34 @@
 static int major;
 static struct class *my_led_class;
 
+static int my_led_open(struct inode *inode, struct file *file) {
+  printk(KERN_INFO "my_led_open\n");
+  return 0;
+}
+
+static int my_led_release(struct inode *inode, struct file *file) {
+  printk(KERN_INFO "my_led_release\n");
+  return 0;
+}
+
+static ssize_t my_led_read(struct file *file, char __user *buf, size_t count,
+                           loff_t *ppos) {
+  printk(KERN_INFO "my_led_read\n");
+  return 0;
+}
+
+static ssize_t my_led_write(struct file *file, const char __user *buf,
+                            size_t count, loff_t *ppos) {
+  printk(KERN_INFO "my_led_write\n");
+  return count;
+}
+
 static struct file_operations my_led_fops = {
     .owner = THIS_MODULE,
+    .open = my_led_open,
+    .release = my_led_release,
+    .read = my_led_read,
+    .write = my_led_write,
 };
 
 static int __init my_led_ini(void) {
