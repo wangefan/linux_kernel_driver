@@ -1,0 +1,5 @@
+#dinefine GROUP_PIN(g, p) ((g << 16) | (p))
+my_led_dtree_and_pdriver {
+  compatible = "my_led_dtree_and_pdriver,my_leddriver";
+  pin = <GROUP_PIN(5, 3)>;
+};
