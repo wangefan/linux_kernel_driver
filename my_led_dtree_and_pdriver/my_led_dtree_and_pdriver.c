@@ -71,13 +71,13 @@ static int my_led_probe(struct platform_device *pdev) {
     ret = class_create_file(&my_led_class, &my_led_class_attrs[idx_class_attr]);
     if (ret) {
       led_err("class_create_file failed!\n");
-      goto err;
+      goto clean_class_and_files;
     }
   }
 
   led_info("probe ok\n");
   return ret;
-err:
+clean_class_and_files:
   while (--idx_class_attr >= 0)
     class_remove_file(&my_led_class, &my_led_class_attrs[idx_class_attr]);
   class_unregister(&my_led_class);
