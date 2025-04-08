@@ -1,0 +1,8 @@
+my_led_dtree_and_pdriver {
+  compatible = "my_led_dtree_and_pdriver,my_leddriver";
+  pinctrl-names = "default";   /* define pinctrl state, has only one here. */
+  pinctrl-0 = <&pinctrl_leds>; /* use pinctrl_leds as pin controller, this is generated via SoC tool, */
+                               /* means mux this pin as GPIO. */
+
+  my-led-gpios = <&gpio5 3 GPIO_ACTIVE_LOW>;  /* use gpio5 controller, 3rd pin */
+};

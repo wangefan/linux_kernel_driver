@@ -1,3 +1,4 @@
+#include <linux/gpio/consumer.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -9,13 +10,33 @@
 #define DRIVER_NAME "my_led_dtree_and_pdriver"
 #define CLASS_NAME "my_led_class"
 
+enum MY_LED_STATE {
+  led_off = 0,
+  led_on = 1,
+  led_max,
+};
+
 // define file mode, all readable, user and group are writiable
 #define MY_LED_RW_ATTR (S_IRUSR | S_IRGRP | S_IROTH | S_IWUSR | S_IWGRP)
+
+static struct gpio_desc* my_led_gpio = NULL;
+static int my_led_state;
 
 static ssize_t my_led_show(struct class *class, struct class_attribute *attr,
                            char *buf);
 static ssize_t my_led_store(struct class *class, struct class_attribute *attr,
                             const char *buf, size_t count);
+
+static void set_led_state(enum MY_LED_STATE state) {
+  led_info("set_led_state: %d\n", state);
+  if (state == led_on) {
+    gpiod_set_value(my_led_gpio, 1);
+    my_led_state = led_on;
+  } else {
+    gpiod_set_value(my_led_gpio, 0);
+    my_led_state = led_off;
+  }
+}
 
 static struct class_attribute my_led_class_attrs[] = {
     __ATTR(led_ctrl, MY_LED_RW_ATTR, my_led_show, my_led_store),
@@ -34,19 +55,41 @@ static const struct of_device_id my_led_dt_match[] = {
 
 static ssize_t my_led_show(struct class *class, struct class_attribute *attr,
                            char *buf) {
-  led_info("show...\n");
-  return sprintf(buf, "LED status: ON\n");
+  int ret = -1;
+  ret = gpiod_get_value(my_led_gpio);
+  if (ret < 0) {
+    led_err("gpiod_get_value failed!\n");
+    return ret;
+  }
+  if (ret == 0) {
+    my_led_state = led_off;
+  } else {
+    my_led_state = led_on;
+  }
+  return sprintf(buf, "%d\n", ret);
 }
 
 static ssize_t my_led_store(struct class *class, struct class_attribute *attr,
                             const char *buf, size_t count) {
+  int cmd;
   led_info("store...\n");
-  if (strncmp(buf, "on", 2) == 0) {
-    led_info("LED ON\n");
-  } else if (strncmp(buf, "off", 3) == 0) {
-    led_info("LED OFF\n");
+
+  if (kstrtoint(buf, 0, &cmd)) {
+    led_err("kstrtoint cmd:%d failed!\n", cmd);
+    return -EINVAL;
+  }
+  if (cmd < 0 || cmd >= led_max) {
+    led_err("Invalid command: %d\n", cmd);
+    return -EINVAL;
+  }
+  if (cmd == led_on) {
+    set_led_state(led_on);
+    led_info("LED on\n");
+  } else if (cmd == led_off) {
+    set_led_state(led_off);
+    led_info("LED off\n");
   } else {
-    led_err("Invalid command\n");
+    led_err("Invalid command: %d\n", cmd);
     return -EINVAL;
   }
   return count;
@@ -75,8 +118,28 @@ static int my_led_probe(struct platform_device *pdev) {
     }
   }
 
+  // get the GPIO from device tree
+  my_led_gpio = gpiod_get(&pdev->dev, "my-led", GPIOD_ASIS);
+  if (IS_ERR(my_led_gpio)) {
+    led_err("gpiod_get failed!\n");
+    ret = PTR_ERR(my_led_gpio);
+    goto clean_class_and_files;
+  }
+
+  // set the GPIO direction with default value 0
+  // 0 means logic off, 1 means logic on LED
+  ret = gpiod_direction_output(my_led_gpio, 0);
+  if (ret) {
+    led_err("gpiod_direction_output failed!\n");
+    goto clean_class_and_files;
+  }
+
+  // turn led off
+  set_led_state(led_off);
+
   led_info("probe ok\n");
   return ret;
+
 clean_class_and_files:
   while (--idx_class_attr >= 0)
     class_remove_file(&my_led_class, &my_led_class_attrs[idx_class_attr]);
@@ -87,6 +150,8 @@ clean_class_and_files:
 static int my_led_remove(struct platform_device *pdev) {
   int idx_class_attr = 0;
   led_info("remove...\n");
+  gpiod_put(my_led_gpio);
+  my_led_gpio = NULL;
   for (idx_class_attr = 0; idx_class_attr < ARRAY_SIZE(my_led_class_attrs);
        idx_class_attr++)
     class_remove_file(&my_led_class, &my_led_class_attrs[idx_class_attr]);
