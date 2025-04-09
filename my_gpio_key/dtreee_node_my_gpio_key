@@ -1,0 +1,35 @@
+// pinctrl node is to mux to GPIO mode, this is generated via SoC tool.
+&iomuxc {
+  ..
+  imx6ul-evk {
+      pinctrl_to_my_gpio_key2 {
+          fsl,pins = <
+              MX6UL_PAD_NAND_CE1_B__GPIO4_IO14     0x000010B0 /*key 2*/
+          >;
+      };
+      ..
+  }
+};
+
+&iomuxc_snvs {
+  ..
+  imx6ul-evk {
+      pinctrl_to_my_gpio_key1 {
+          fsl,pins = <
+              MX6ULL_PAD_SNVS_TAMPER1__GPIO5_IO01     0x000110A0 /*key 1*/
+          >;
+      };
+      ..
+  };
+};
+
+// gpio key node is to define the GPIO key
+my-gpio-keys {
+  compatible = "my_gpio_key_driver";
+  pinctrl-names = "default";   /* define pinctrl state, has only one here. */
+  pinctrl-0 = <&pinctrl_to_my_gpio_key1 &pinctrl_to_my_gpio_key2>; /* use pinctrl_to_my_gpio_key1 & pinctrl_to_my_gpio_key2 
+                                                                      as pin controller, these are generated via SoC tool,
+                                                                      means mux this pin as key (GPIO). */
+
+  my-gpios = <&gpio5 1 GPIO_ACTIVE_LOW &gpio4 14 GPIO_ACTIVE_LOW>;  /* use 2 controllers, GPIO5_IO01 and GPIO14_IO04*/
+};
