@@ -5,11 +5,46 @@
 #include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
+#include "my_chr_dev.h"
 
 #define gpio_key_info(fmt, ...) pr_info("[my_GPIO]: " fmt, ##__VA_ARGS__)
 #define gpio_key_err(fmt, ...) pr_err("[my_GPIO]: " fmt, ##__VA_ARGS__)
 
 #define DRIVER_NAME "my_gpio_driver"
+
+const char *DEV_CLASS_NAME = "my_gpio_key_class";
+const char *DEV_NAME = "my_gpio_key_dev";
+static struct my_char_device_info mydev_info;
+
+static int my_chr_open(struct inode *inode, struct file *file) {
+  gpio_key_info("my_chr_open\n");
+  return 0;
+}
+
+static int my_chr_release(struct inode *inode, struct file *file) {
+  gpio_key_info("my_chr_release\n");
+  return 0;
+}
+
+static ssize_t my_chr_read(struct file *file, char __user *buf, size_t count,
+                           loff_t *offset) {
+  gpio_key_info("my_chr_read\n");
+  return 0;
+}
+
+static ssize_t my_chr_write(struct file *file, const char __user *buf,
+                            size_t count, loff_t *offset) {
+  gpio_key_info("my_chr_write\n");
+  return count;
+}
+
+static struct file_operations dyn_chr_fops = {
+    .owner = THIS_MODULE,
+    .open = my_chr_open,
+    .release = my_chr_release,
+    .read = my_chr_read,
+    .write = my_chr_write,
+};
 
 struct my_gpio_key_info {
   struct gpio_desc *gpio_desc;
@@ -136,12 +171,20 @@ static int __init my_gpio_key_ini(void) {
     return -ENODEV;
   }
 
+  ret = register_my_char_device(&mydev_info, DEV_NAME,
+                                DEV_CLASS_NAME, 0, 0, &dyn_chr_fops);
+  if (ret < 0) {
+    gpio_key_err("Failed to register char device\n");
+    return ret;
+  }
+
   gpio_key_info("Initializing done\n");
   return ret;
 }
 
 static void __exit my_gpio_key_exit(void) {
   gpio_key_info("Exiting...\n");
+  unregister_my_char_device(&mydev_info);
   platform_driver_unregister(&my_gpio_key_driver);
   gpio_key_info("Exit done\n");
 }
