@@ -5,6 +5,7 @@
 #include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
+#include <linux/uaccess.h>
 #include "my_chr_dev.h"
 
 #define gpio_key_info(fmt, ...) pr_info("[my_GPIO]: " fmt, ##__VA_ARGS__)
@@ -15,6 +16,10 @@
 const char *DEV_CLASS_NAME = "my_gpio_key_class";
 const char *DEV_NAME = "my_gpio_key_dev";
 static struct my_char_device_info mydev_info;
+
+static DECLARE_WAIT_QUEUE_HEAD(g_gpio_key_wait_queue);
+bool g_key_status_updated = false;
+bool g_key_pressed = false;
 
 static int my_chr_open(struct inode *inode, struct file *file) {
   gpio_key_info("my_chr_open\n");
@@ -29,6 +34,13 @@ static int my_chr_release(struct inode *inode, struct file *file) {
 static ssize_t my_chr_read(struct file *file, char __user *buf, size_t count,
                            loff_t *offset) {
   gpio_key_info("my_chr_read\n");
+  wait_event_interruptible(g_gpio_key_wait_queue, g_key_status_updated);
+  // copy key status to user space
+  g_key_status_updated = false;
+  if (copy_to_user(buf, &g_key_pressed, sizeof(g_key_pressed))) {
+    gpio_key_err("Failed to copy key status to user space\n");
+    return -EFAULT;
+  }
   return 0;
 }
 
@@ -67,12 +79,18 @@ static irqreturn_t my_gpio_key_irq(int irq, void *dev_id) {
     gpio_key_err("Failed to get GPIO value\n");
     return IRQ_HANDLED;
   }
-  // handle the interrupt
-  gpio_key_info("GPIO %d triggered IRQ %d, key %d!\n",
-                desc_to_gpio(gpio_key->gpio_desc), gpio_key->irq_id,
-                key_status);
+  if (key_status != g_key_pressed) {
+    g_key_status_updated = true;
+    g_key_pressed = key_status;
+    wake_up_interruptible(&g_gpio_key_wait_queue);
+    // handle the interrupt
+    gpio_key_info("GPIO %d triggered IRQ %d, key %d!\n",
+                  desc_to_gpio(gpio_key->gpio_desc), gpio_key->irq_id,
+                  key_status);
 
-  return IRQ_HANDLED;
+    return IRQ_HANDLED;
+  }
+  return IRQ_NONE;
 }
 
 static int my_gpio_key_probe(struct platform_device *pdev) {
