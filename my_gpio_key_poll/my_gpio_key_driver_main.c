@@ -1,12 +1,13 @@
+#include "my_chr_dev.h"
 #include <linux/gpio/consumer.h>
 #include <linux/init.h>
 #include <linux/interrupt.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
+#include <linux/poll.h>
 #include <linux/slab.h>
 #include <linux/uaccess.h>
-#include "my_chr_dev.h"
 
 #define gpio_key_info(fmt, ...) pr_info("[my_GPIO]: " fmt, ##__VA_ARGS__)
 #define gpio_key_err(fmt, ...) pr_err("[my_GPIO]: " fmt, ##__VA_ARGS__)
@@ -29,6 +30,16 @@ static int my_chr_open(struct inode *inode, struct file *file) {
 static int my_chr_release(struct inode *inode, struct file *file) {
   gpio_key_info("my_chr_release\n");
   return 0;
+}
+
+static unsigned int my_chr_poll(struct file *file, poll_table *wait) {
+  gpio_key_info("my_chr_poll\n");
+  unsigned int mask = 0;
+  poll_wait(file, &g_gpio_key_wait_queue, wait);
+  if (g_key_status_updated) {
+    mask |= POLLIN | POLLRDNORM; // POLLRDNORM is for legacy support.
+  }
+  return mask;
 }
 
 static ssize_t my_chr_read(struct file *file, char __user *buf, size_t count,
@@ -54,6 +65,7 @@ static struct file_operations dyn_chr_fops = {
     .owner = THIS_MODULE,
     .open = my_chr_open,
     .release = my_chr_release,
+    .poll = my_chr_poll,
     .read = my_chr_read,
     .write = my_chr_write,
 };
