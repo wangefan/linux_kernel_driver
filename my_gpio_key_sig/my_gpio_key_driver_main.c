@@ -5,7 +5,6 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
-#include <linux/poll.h>
 #include <linux/slab.h>
 #include <linux/uaccess.h>
 
@@ -21,6 +20,7 @@ static struct my_char_device_info mydev_info;
 static DECLARE_WAIT_QUEUE_HEAD(g_gpio_key_wait_queue);
 bool g_key_status_updated = false;
 bool g_key_pressed = false;
+struct fasync_struct *g_fasync = NULL;
 
 static int my_chr_open(struct inode *inode, struct file *file) {
   gpio_key_info("my_chr_open\n");
@@ -32,14 +32,10 @@ static int my_chr_release(struct inode *inode, struct file *file) {
   return 0;
 }
 
-static unsigned int my_chr_poll(struct file *file, poll_table *wait) {
-  gpio_key_info("my_chr_poll\n");
-  unsigned int mask = 0;
-  poll_wait(file, &g_gpio_key_wait_queue, wait);
-  if (g_key_status_updated) {
-    mask |= POLLIN | POLLRDNORM; // POLLRDNORM is for legacy support.
-  }
-  return mask;
+static int my_chr_fasync(int fd, struct file *file, int on) {
+  gpio_key_info("my_chr_fasync\n");
+  fasync_helper(fd, file, on, &g_fasync);
+  return 0;
 }
 
 static ssize_t my_chr_read(struct file *file, char __user *buf, size_t count,
@@ -65,7 +61,7 @@ static struct file_operations dyn_chr_fops = {
     .owner = THIS_MODULE,
     .open = my_chr_open,
     .release = my_chr_release,
-    .poll = my_chr_poll,
+    .fasync = my_chr_fasync,
     .read = my_chr_read,
     .write = my_chr_write,
 };
@@ -95,7 +91,11 @@ static irqreturn_t my_gpio_key_irq(int irq, void *dev_id) {
     g_key_status_updated = true;
     g_key_pressed = key_status;
     wake_up_interruptible(&g_gpio_key_wait_queue);
-    // handle the interrupt
+
+    // send signal to user space
+    if (g_fasync) {
+      kill_fasync(&g_fasync, SIGIO, POLL_IN);
+    }
     gpio_key_info("GPIO %d triggered IRQ %d, key %d!\n",
                   desc_to_gpio(gpio_key->gpio_desc), gpio_key->irq_id,
                   key_status);
