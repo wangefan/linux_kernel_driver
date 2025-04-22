@@ -1,3 +1,4 @@
+#include "my_chr_dev.h"
 #include <linux/gpio/consumer.h>
 #include <linux/init.h>
 #include <linux/interrupt.h>
@@ -6,7 +7,6 @@
 #include <linux/platform_device.h>
 #include <linux/slab.h>
 #include <linux/uaccess.h>
-#include "my_chr_dev.h"
 
 #define gpio_key_info(fmt, ...) pr_info("[my_GPIO]: " fmt, ##__VA_ARGS__)
 #define gpio_key_err(fmt, ...) pr_err("[my_GPIO]: " fmt, ##__VA_ARGS__)
@@ -19,7 +19,7 @@ static struct my_char_device_info mydev_info;
 
 static DECLARE_WAIT_QUEUE_HEAD(g_gpio_key_wait_queue);
 bool g_key_status_updated = false;
-bool g_key_pressed = false;
+int g_key_pressed = false;
 
 static int my_chr_open(struct inode *inode, struct file *file) {
   gpio_key_info("my_chr_open\n");
@@ -34,6 +34,10 @@ static int my_chr_release(struct inode *inode, struct file *file) {
 static ssize_t my_chr_read(struct file *file, char __user *buf, size_t count,
                            loff_t *offset) {
   gpio_key_info("my_chr_read\n");
+  if (!g_key_status_updated && file->f_flags & O_NONBLOCK) {
+    gpio_key_info("No key status updated, return -EAGAIN\n");
+    return -EAGAIN;
+  }
   wait_event_interruptible(g_gpio_key_wait_queue, g_key_status_updated);
   // copy key status to user space
   g_key_status_updated = false;
@@ -41,7 +45,7 @@ static ssize_t my_chr_read(struct file *file, char __user *buf, size_t count,
     gpio_key_err("Failed to copy key status to user space\n");
     return -EFAULT;
   }
-  return 0;
+  return sizeof(g_key_pressed);
 }
 
 static ssize_t my_chr_write(struct file *file, const char __user *buf,
@@ -189,8 +193,8 @@ static int __init my_gpio_key_ini(void) {
     return -ENODEV;
   }
 
-  ret = register_my_char_device(&mydev_info, DEV_NAME,
-                                DEV_CLASS_NAME, 0, 0, &dyn_chr_fops);
+  ret = register_my_char_device(&mydev_info, DEV_NAME, DEV_CLASS_NAME, 0, 0,
+                                &dyn_chr_fops);
   if (ret < 0) {
     gpio_key_err("Failed to register char device\n");
     return ret;
