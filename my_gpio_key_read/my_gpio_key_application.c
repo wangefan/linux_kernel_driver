@@ -23,7 +23,7 @@ int main(int argc, char **argv) {
     return -1;
   }
   // Set Non-blocking
-  flag |= O_NONBLOCK;
+  // flag |= O_NONBLOCK;
   // Comment out set blocking
   // flag &= ~O_NONBLOCK;
   if (fcntl(fd, F_SETFL, flag) < 0) {

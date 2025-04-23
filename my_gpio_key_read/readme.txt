@@ -15,3 +15,8 @@ support nonblock:
   dvr_read:
   if(!g_key_status_updated && file->f_flags & O_NONBLOCK)
     return -EAGAIN;
+
+timer:
+1.Add time member in my_gpio_key_info
+2.Init in probe
+3.mod_timer in irq

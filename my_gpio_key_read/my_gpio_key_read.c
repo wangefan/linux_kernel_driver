@@ -7,6 +7,7 @@
 #include <linux/platform_device.h>
 #include <linux/slab.h>
 #include <linux/uaccess.h>
+#include "linux/timer.h"
 
 #define gpio_key_info(fmt, ...) pr_info("[my_GPIO]: " fmt, ##__VA_ARGS__)
 #define gpio_key_err(fmt, ...) pr_err("[my_GPIO]: " fmt, ##__VA_ARGS__)
@@ -65,6 +66,7 @@ static struct file_operations dyn_chr_fops = {
 struct my_gpio_key_info {
   struct gpio_desc *gpio_desc;
   int irq_id;
+  struct timer_list key_debounce_timer;
 };
 
 static struct my_gpio_key_info *g_gpio_key_infos = NULL;
@@ -76,25 +78,31 @@ static const struct of_device_id my_gpio_key_dt_match[] = {
     {},
 };
 
-static irqreturn_t my_gpio_key_irq(int irq, void *dev_id) {
-  struct my_gpio_key_info *gpio_key = (struct my_gpio_key_info *)dev_id;
+static void key_debounce_timer_func(unsigned long data) {
+  gpio_key_info("key_debounce_timer_func\n");
+  // get the timer from the data
+  struct my_gpio_key_info *gpio_key = (struct my_gpio_key_info *)data;
+
+  // get the GPIO value
+  // and update the key status
   int key_status = gpiod_get_value(gpio_key->gpio_desc);
   if (key_status < 0) {
     gpio_key_err("Failed to get GPIO value\n");
-    return IRQ_HANDLED;
+    return;
   }
-  if (key_status != g_key_pressed) {
-    g_key_status_updated = true;
-    g_key_pressed = key_status;
-    wake_up_interruptible(&g_gpio_key_wait_queue);
-    // handle the interrupt
-    gpio_key_info("GPIO %d triggered IRQ %d, key %d!\n",
-                  desc_to_gpio(gpio_key->gpio_desc), gpio_key->irq_id,
-                  key_status);
+  g_key_pressed = key_status;
+  g_key_status_updated = true;
+  wake_up_interruptible(&g_gpio_key_wait_queue);
+  gpio_key_info("key updated:%d\n", g_key_pressed);
+}
 
-    return IRQ_HANDLED;
-  }
-  return IRQ_NONE;
+static irqreturn_t my_gpio_key_irq(int irq, void *dev_id) {
+  // get the timer from the data
+  struct my_gpio_key_info *gpio_key = (struct my_gpio_key_info *)dev_id;
+  gpio_key_info("GPIO %d triggered IRQ %d!!!\n",
+                desc_to_gpio(gpio_key->gpio_desc), irq);
+  mod_timer(&gpio_key->key_debounce_timer, jiffies + msecs_to_jiffies(20));
+  return IRQ_HANDLED;
 }
 
 static int my_gpio_key_probe(struct platform_device *pdev) {
@@ -145,6 +153,12 @@ static int my_gpio_key_probe(struct platform_device *pdev) {
                    g_gpio_key_infos[idx_gpio].irq_id);
       return ret;
     }
+
+    // set key_debounce_timer
+    setup_timer(&g_gpio_key_infos[idx_gpio].key_debounce_timer,
+                key_debounce_timer_func,
+                (unsigned long)&g_gpio_key_infos[idx_gpio]);
+    g_gpio_key_infos[idx_gpio].key_debounce_timer.expires = ~0;
     gpio_key_info("Get the GPIO %d(th) id: %d, the converted IRQ: %d\n",
                   idx_gpio, desc_to_gpio(g_gpio_key_infos[idx_gpio].gpio_desc),
                   g_gpio_key_infos[idx_gpio].irq_id);
@@ -162,6 +176,9 @@ static int my_gpio_key_remove(struct platform_device *pdev) {
   for (idx_gpio = 0; idx_gpio < gpio_count; idx_gpio++) {
     free_irq(g_gpio_key_infos[idx_gpio].irq_id, &g_gpio_key_infos[idx_gpio]);
     gpiod_put(g_gpio_key_infos[idx_gpio].gpio_desc); // free GPIO descriptor
+    // free timer
+    del_timer(
+        &g_gpio_key_infos[idx_gpio].key_debounce_timer);
   }
 
   if (g_gpio_key_infos) {
