@@ -7,7 +7,7 @@
 #include <linux/platform_device.h>
 #include <linux/slab.h>
 #include <linux/uaccess.h>
-#include "linux/timer.h"
+#include "linux/workqueue.h"
 
 #define gpio_key_info(fmt, ...) pr_info("[my_GPIO]: " fmt, ##__VA_ARGS__)
 #define gpio_key_err(fmt, ...) pr_err("[my_GPIO]: " fmt, ##__VA_ARGS__)
@@ -66,7 +66,7 @@ static struct file_operations dyn_chr_fops = {
 struct my_gpio_key_info {
   struct gpio_desc *gpio_desc;
   int irq_id;
-  struct tasklet_struct key_tasklet;
+  struct work_struct key_work;
 };
 
 static struct my_gpio_key_info *g_gpio_key_infos = NULL;
@@ -78,12 +78,12 @@ static const struct of_device_id my_gpio_key_dt_match[] = {
     {},
 };
 
-static void my_gpio_key_fun_bottom(unsigned long data) {
+static void my_gpio_key_fun_work(struct work_struct *work) {
   struct my_gpio_key_info *gpio_key;
   int key_status = 0;
-  gpio_key_info("my_gpio_key_fun_bottom\n");
+  gpio_key_info("my_gpio_key_fun_work\n");
   // get the timer from the data
-  gpio_key = (struct my_gpio_key_info *)data;
+  gpio_key = container_of(work, struct my_gpio_key_info, key_work);
   key_status = gpiod_get_value(gpio_key->gpio_desc);
   if (key_status < 0) {
     gpio_key_err("Failed to get GPIO value\n");
@@ -100,8 +100,8 @@ static irqreturn_t my_gpio_key_irq(int irq, void *dev_id) {
   struct my_gpio_key_info *gpio_key = (struct my_gpio_key_info *)dev_id;
   gpio_key_info("GPIO %d triggered IRQ %d!!!\n",
                 desc_to_gpio(gpio_key->gpio_desc), irq);
-  // schedule the tasklet
-  tasklet_schedule(&gpio_key->key_tasklet);
+  // schedule the work into queue
+  schedule_work(&gpio_key->key_work);
   return IRQ_HANDLED;
 }
 
@@ -154,11 +154,10 @@ static int my_gpio_key_probe(struct platform_device *pdev) {
       return ret;
     }
 
-    // initialize tasklet
-    tasklet_init(&g_gpio_key_infos[idx_gpio].key_tasklet,
-                 my_gpio_key_fun_bottom, (long unsigned int)&g_gpio_key_infos[idx_gpio]);
+    // initialize work
+    INIT_WORK(&g_gpio_key_infos[idx_gpio].key_work,
+              my_gpio_key_fun_work);
   }
-
   return ret;
 }
 
@@ -171,8 +170,6 @@ static int my_gpio_key_remove(struct platform_device *pdev) {
   for (idx_gpio = 0; idx_gpio < gpio_count; idx_gpio++) {
     free_irq(g_gpio_key_infos[idx_gpio].irq_id, &g_gpio_key_infos[idx_gpio]);
     gpiod_put(g_gpio_key_infos[idx_gpio].gpio_desc); // free GPIO descriptor
-    // free tasklet
-    tasklet_kill(&g_gpio_key_infos[idx_gpio].key_tasklet);
   }
 
   if (g_gpio_key_infos) {

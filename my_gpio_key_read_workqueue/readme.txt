@@ -2,11 +2,11 @@ Usage:
 ./my_gpio_key_application /dev/my_gpio_key_dev
 
 note:
-1.decalre struct_tasklet in probe
-2.tasklet_schedule in ISR
-3.tasklet_kill in remove
+1.declare struct_work using INIT_WORK in probe
+2.schedule_work in ISR
 
 note:
-1.task_let function is processed in the softIRQ context
-2.Can`t sleep, so can`t use mutex
+1.struct_work function is processed in the process context
+2.Can sleep, so can use mutex
 3.Can use spinlock
+4.Compare:

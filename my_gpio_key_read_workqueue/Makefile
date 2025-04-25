@@ -7,7 +7,7 @@
 #   obj-m += my_led.o
 obj-m := my_gpio_key_driver.o
 
-my_gpio_key_driver-objs := my_gpio_key_read_tasklet.o my_chr_dev.o
+my_gpio_key_driver-objs := my_gpio_key_read_workerqueue.o my_chr_dev.o
 
 # Userspace application
 APP := my_gpio_key_application
