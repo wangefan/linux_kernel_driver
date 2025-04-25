@@ -1,5 +1,6 @@
 #include <fcntl.h>
 #include <stdio.h>
+#include <unistd.h>
 
 int main(int argc, char **argv) {
   int flag = 0, val = 0, read_val = 0, val_size = 4;
