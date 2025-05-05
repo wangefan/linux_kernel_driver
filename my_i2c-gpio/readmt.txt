@@ -1,0 +1,67 @@
+refer to:
+doc_and_source_for_drivers/IMX6ULL/doc_pic/04_I2C/14_使用GPIO操作I2C设备_基于IMX6ULL.md
+
+# one line: export ARCH=arm CROSS_COMPILE=arm-buildroot-linux-gnueabihf- PATH=$PATH:/media/yf/yf-ssd/my_project/linux_kernel_course/100ask_imx6ull-sdk/ToolChain/arm-buildroot-linux-gnueabihf_sdk-buildroot/bin KERN_DIR=/media/yf/yf-ssd/my_project/linux_kernel_course/100ask_imx6ull-sdk/Linux-4.9.88
+
+dts
+===
+my-gpio-i2c {
+    compatible = "i2c-gpio";
+    gpios = <&gpio4 20 0 /* sda */
+            &gpio4 21 0 /* scl */
+            >;
+    i2c-gpio,delay-us = <5>;	/* need 2*us for every bit = 10 us = 10/1000000 s = 1/100000 s = 100000 Hz = 100k Hz*/
+    #address-cells = <1>;  /* address cell is 1 byte */
+    #size-cells = <0>;     /* no size cell */
+};
+
+make i2c-gpio module
+====
+1. check if i2c-gpio is set or not
+<sdk path>
+ex:
+<path>/Linux-4.9.88/
+cd drivers/i2c/busses
+<path>/Linux-4.9.88/drivers/i2c/busses
+❯ vi Makefile
+obj-$(CONFIG_I2C_EFM32)         += i2c-efm32.o
+..
+obj-$(CONFIG_I2C_GPIO)          += i2c-gpio.o
+
+vi .config
+..
+1879 # CONFIG_I2C_GPIO is not set
+1880 CONFIG_I2C_IMX=y
+
+not set
+2. set it and make
+<path>/Linux-4.9.88/
+make modules   // 得到 drivers/i2c/busses/i2c-gpio.ko
+
+3.
+scp dtb to /build/
+scp i2c-gpio.ko to device and insmod
+
+4.
+check if i2c-gpio.ko probed?
+
+check if adapter exist?
+[root@100ask:~/testing]# i2cdetect -l
+i2c-1   i2c             21a4000.i2c                             I2C adapter
+i2c-4   i2c             my-gpio-i2c                             I2C adapter
+i2c-0   i2c             21a0000.i2c                             I2C adapter
+
+check if slave can be response after pluging it
+[root@100ask:~/testing]# i2cdetect -y -a 4
+     0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f
+00: -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+10: -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+20: -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+30: -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+40: -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+50: 50 -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+60: -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+70: -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
+
+done
