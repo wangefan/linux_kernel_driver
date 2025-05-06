@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>EEPROM Driver - AT24C02</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      background-color: #fdfdfd;
+      line-height: 1.6;
+    }
+
+    details {
+      border: 1px solid #aaa;
+      border-radius: 6px;
+      padding: 10px 15px;
+      margin-bottom: 15px;
+      background-color: #fff;
+      position: relative;
+    }
+
+    summary {
+      font-weight: bold;
+      font-size: 1.2em;
+      cursor: pointer;
+      outline: none;
+      display: flex;
+      align-items: center;
+    }
+
+    summary::-webkit-details-marker {
+      display: none;
+    }
+
+    summary::before {
+      content: "▶";
+      display: inline-block;
+      margin-right: 6px;
+      transition: transform 0.2s ease;
+    }
+
+    details[open] > summary::before {
+      transform: rotate(90deg);
+    }
+
+    h2, h3 {
+      margin-top: 15px;
+    }
+
+    img {
+      max-width: 100%;
+      border: 1px solid #ccc;
+      padding: 4px;
+      border-radius: 4px;
+      background: #f8f8f8;
+    }
+
+    pre {
+      background: #f0f0f0;
+      padding: 10px;
+      overflow-x: auto;
+      border-left: 4px solid #ccc;
+    }
+
+    a {
+      color: #007acc;
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+
+<details>
+  <summary>EEPROM Driver - "AT24C02"</summary>
+
+  <details open>
+    <summary>HW setting</summary>
+    <img src="resources/hw_settings.png" alt="Hardware setting for AT24C02" />
+  </details>
+
+  <details open>
+    <summary>I2C Write data to AT24C02</summary>
+    <img src="resources/write_data.png" alt="Write Data to EEPROM" />
+  </details>
+
+  <details open>
+    <summary>I2C Read data to AT24C02</summary>
+    <h3>Random Read:</h3>
+    <img src="resources/read_data_random.png" alt="Random Read Image" />
+    <h3>Sequential Read:</h3>
+    <img src="resources/read_data_seq.png" alt="Sequential Read Image" />
+  </details>
+
+  <details open>
+    <summary>How to use</summary>
+    <pre>
+./my_eeprom_app &lt;w/r&gt; &lt;char node&gt; &lt;address offset&gt; [&lt;count&gt;] [&lt;characters&gt;]
+
+ex:
+write string "abcde" by offset 0 to EEPROM =>
+  ./my_eeprom_app w /dev/my_eeprom 0x00 abcde
+
+read five characters by offset 1 from EEPROM =>
+  ./my_eeprom_app r /dev/my_eeprom 0x01 4
+  bcde
+    </pre>
+  </details>
+
+  <details open>
+    <summary>Source code</summary>
+    <p><a href="https://github.com/wangefan/linux_kernel_driver/tree/master/my_eeprom" target="_blank">View source code</a></p>
+  </details>
+
+</details>
+
+</body>
+</html>
