@@ -2,7 +2,7 @@
 obj-m := my_uart_driver.o
 
 # This line means my_uart_driver.ko are composed of the following object files.
-my_uart_driver-objs := my_uart_driver_main.o
+my_uart_driver-objs := my_uart_driver_main.o my_ring_buffer.o
 
 # Userspace application
 # APP := my_uart_app
