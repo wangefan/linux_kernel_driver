@@ -1,4 +1,5 @@
 #include "my_ring_buffer.h"
+#include <linux/console.h>
 #include <linux/irq.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
@@ -49,7 +50,6 @@ static ssize_t my_hw_proc_file_show(struct file *file, char __user *buf,
   int data_cnt, i, ret;
   unsigned char data;
 
-  print_my_uart_info("my_hw_proc_file_show\n");
   data_cnt = get_data_count(&tx_buffer);
 
   data_cnt = (data_cnt > count) ? count : data_cnt;
@@ -171,6 +171,8 @@ static struct uart_ops my_uart_ops = {
     //.verify_port  = NULL,
 };
 
+static struct console my_uart_uart_console;
+
 static struct uart_driver my_uart_drv = {
     .owner = THIS_MODULE,
     .driver_name = "my_tty",
@@ -178,6 +180,37 @@ static struct uart_driver my_uart_drv = {
     .major = 0,
     .minor = 0,
     .nr = 1,
+    .cons = &my_uart_uart_console,
+};
+
+/* console*/
+static void my_uart_console_write(struct console *co, const char *s,
+                                  unsigned int count) {
+  int i;
+  char data_in;
+  for (i = 0; i < count; i++) {
+    if (is_full(&tx_buffer)) {
+      return;
+    }
+    data_in = s[i];
+    put_data(&tx_buffer, data_in);
+  }
+}
+
+struct tty_driver *my_uart_console_device(struct console *co, int *index) {
+  print_my_uart_info("my_uart_console_device\n");
+  struct uart_driver *p = co->data;
+  *index = co->index;
+  return p->tty_driver;
+}
+
+static struct console my_uart_uart_console = {
+    .name = "ttyMyConsole",
+    .write = my_uart_console_write,
+    .device = my_uart_console_device,
+    .flags = CON_PRINTBUFFER,
+    .index = -1,
+    .data = &my_uart_drv,
 };
 
 static const struct of_device_id my_uart_of_match[] = {
@@ -207,15 +240,15 @@ static int my_uart_probe(struct platform_device *pdev) {
   my_uart_port->irq = rx_irq;
   my_uart_port->fifosize = 32;
   my_uart_port->ops = &my_uart_ops;
-  my_uart_port->flags = UPF_BOOT_AUTOCONF;
+  my_uart_port->flags = 0;
   my_uart_port->type = PORT_8250;
+  my_uart_port->iobase = 1;
 
   // request irq
   ret = devm_request_irq(&pdev->dev, rx_irq, rx_irq_handler, 0,
                          dev_name(&pdev->dev), my_uart_port);
 
-  uart_add_one_port(&my_uart_drv, my_uart_port);
-  return 0;
+  return uart_add_one_port(&my_uart_drv, my_uart_port);
 }
 
 static int my_uart_remove(struct platform_device *pdev) {
