@@ -40,11 +40,12 @@
       transition: transform 0.2s ease;
     }
 
-    details[open] > summary::before {
+    details[open]>summary::before {
       transform: rotate(90deg);
     }
 
-    h2, h3 {
+    h2,
+    h3 {
       margin-top: 15px;
     }
 
@@ -57,11 +58,16 @@
     }
 
     pre {
-      background: #f0f0f0;
-      padding: 10px;
+      background: #2d2d2d;
+      color: #f8f8f2;
+      padding: 12px;
       overflow-x: auto;
-      border-left: 4px solid #ccc;
+      border-left: 4px solid #66d9ef;
+      font-size: 0.95em;
+      font-family: Consolas, monospace;
+      line-height: 1.5;
     }
+
 
     a {
       color: #007acc;
@@ -73,32 +79,33 @@
     }
   </style>
 </head>
+
 <body>
 
-<details>
-  <summary>EEPROM Driver - "AT24C02"</summary>
+  <details>
+    <summary>EEPROM Driver - "AT24C02"</summary>
 
-  <details open>
-    <summary>HW setting</summary>
-    <img src="resources/hw_settings.png" alt="Hardware setting for AT24C02" />
-  </details>
+    <details open>
+      <summary>HW setting</summary>
+      <img src="resources/hw_settings.png" alt="Hardware setting for AT24C02" />
+    </details>
 
-  <details open>
-    <summary>I2C Write data to AT24C02</summary>
-    <img src="resources/write_data.png" alt="Write Data to EEPROM" />
-  </details>
+    <details open>
+      <summary>I2C Write data to AT24C02</summary>
+      <img src="resources/write_data.png" alt="Write Data to EEPROM" />
+    </details>
 
-  <details open>
-    <summary>I2C Read data to AT24C02</summary>
-    <h3>Random Read:</h3>
-    <img src="resources/read_data_random.png" alt="Random Read Image" />
-    <h3>Sequential Read:</h3>
-    <img src="resources/read_data_seq.png" alt="Sequential Read Image" />
-  </details>
+    <details open>
+      <summary>I2C Read data to AT24C02</summary>
+      <h3>Random Read:</h3>
+      <img src="resources/read_data_random.png" alt="Random Read Image" />
+      <h3>Sequential Read:</h3>
+      <img src="resources/read_data_seq.png" alt="Sequential Read Image" />
+    </details>
 
-  <details open>
-    <summary>How to use</summary>
-    <pre>
+    <details open>
+      <summary>How to use</summary>
+      <pre>
 ./my_eeprom_app &lt;w/r&gt; &lt;char node&gt; &lt;address offset&gt; [&lt;count&gt;] [&lt;characters&gt;]
 
 ex:
@@ -109,14 +116,118 @@ read five characters by offset 1 from EEPROM =>
   ./my_eeprom_app r /dev/my_eeprom 0x01 4
   bcde
     </pre>
+    </details>
+
+    <details open>
+      <summary>Source code</summary>
+      <p><a href="https://github.com/wangefan/linux_kernel_driver/tree/master/my_eeprom" target="_blank">View source
+          code</a></p>
+    </details>
+
   </details>
 
-  <details open>
-    <summary>Source code</summary>
-    <p><a href="https://github.com/wangefan/linux_kernel_driver/tree/master/my_eeprom" target="_blank">View source code</a></p>
+  <details>
+    <summary>Virtual UART Driver</summary>
+    <details open>
+      <summary>shell, tty, uart架構圖</summary>
+      <img src="resources/09_tty_console.png" alt="shell, tty, uart架構圖" />
+      <h4>1. /dev/tty0: 造訪前景的terminal tty</h4>
+      <h4>2. /dev/tty: 造訪目前shell所擁有的terminal tty</h4>
+      <h4>3. console: 擁有高權限的tty, 可透過cmdline指定哪個tty為console</h4>
+    </details>
+    <details open>
+      <summary>discipline</summary>
+      <img src="resources/10_tty_drivers.png" alt="discipline" />
+    </details>
+    <details open>
+      <summary>實做流程</summary>
+      <h4>1. register/unregister platform_driver(probe, remove, match table with dts)</h4>
+      <h4>2. declare `uart_driver`(`driver_name`, `dev_name` for `/tty/<dev_name>`, nr 若為2則會產生/tty/<dev_name>0, /tty/
+            <dev_name>1)</h4>
+      <h4>3. declare uart_ops (start_tx uart傳出給硬體, )<br>
+        probe ⇒ allocate uart_port, uart_add_one_port(&uart_drv, uart_port)<br>
+        remove ⇒ uart_remove_one_port(&uart_drv, port);
+      </h4>
+    </details>
+    <details open>
+      <summary>運作流程</summary>
+      <img src="resources/41_data_flow.png" alt="discipline" />
+      <details open>
+        <summary>user space write to kernel UART driver:</summary>
+        <h4>簡易流程圖：</h4>
+        <pre>
+        User space: write(fd, "Hello", 5)
+                     |
+                     V
+        Kernel TTY subsystem xmit（環形緩衝區）
+            [ H ][ e ][ l ][ l ][ o ]
+              ↑ tail              ↑ head
+                     |
+                     V
+            呼叫 start_tx()
+                     |
+                     V
+        while (!empty && !stopped) {
+            txbuf_put('H'); tail++;
+            txbuf_put('e'); tail++;
+            txbuf_put('l'); tail++;
+            txbuf_put('l'); tail++;
+            txbuf_put('o'); tail++;
+        }
+                     |
+                     V
+        Kernel 自建 txbuf 緩衝區（模擬 UART 發送 buffer）
+            [ H ][ e ][ l ][ l ][ o ]
+                     |
+                     V
+        應用程式透過 /proc/virt_uart_buf 的 read()
+        取出 kernel 中 txbuf 資料
+      </pre>
+      <h4>細節：</h4>
+      <h5>1. app write to kernel: echo “hello” > /dev/ttyVIRT0</h5>
+      <h5>2. 寫入緩衝區<br>
+        Kernel 將 `"hello"` 這5個字元先放入一個稱為 `xmit` 的 **環形緩衝區 (circular buffer)** 中，並觸發 `start_tx()`，通知Kernel 「**可以開始發送**」資料。
+        環形緩衝區 (`xmit`) 如下：</h5>
+        <pre>
+          +---------------------------------------------+
+          | UART核心緩衝區（xmit）                        |
+          | ... [ h ][ e ][ l ][ l ][ o ] ...           |
+          |       ^                      ^
+          |       tail                   head
+          +---------------------------------------------+
+        </pre>
+        <h5>xmit->head 指向新寫入資料的位置。</h5>
+        <h5>xmit->tail 指向即將送出資料的位置。</h5>
+        <h5>3. UART subsystem 呼叫我們定義的 virt_start_tx()</h5>
+        <pre>
+          static void virt_start_tx(struct uart_port *port)
+          {
+            struct circ_buf *xmit = &port->state->xmit;
+
+            while (!uart_circ_empty(xmit) && !uart_tx_stopped(port)) {
+              // 把上層應用程式送到 kernel 的資料轉存進自己的txbuf
+              txbuf_put(xmit->buf[xmit->tail]);
+              // 更新環形緩衝區指標，標記這個資料已經處理完畢
+              xmit->tail = (xmit->tail + 1) & (UART_XMIT_SIZE - 1);
+              // 更新統計資訊
+              port->icount.tx++;
+            }
+
+            // 如果處理完之後，發現 UART 核心緩衝區裡待發送的資料已經不多了
+            if (uart_circ_chars_pending(xmit) < WAKEUP_CHARS)
+              // 通知上層應用程式：「Kernel UART 緩衝區有空間可再寫入新資料
+              uart_write_wakeup(port);
+          }
+        </pre>
+        <h5>4. cat /proc/virt_uart_buf 是一個模擬動作 只是看virtual UART driver送出了什麼</h5>
+      </details>
+    </details>
+    <details open>
+      <summary>Source code</summary>
+      <p><a href="https://github.com/wangefan/linux_kernel_driver/tree/gh-pages/my_uart_driver" target="_blank">View source
+          code</a></p>
+    </details>
   </details>
-
-</details>
-
 </body>
+
 </html>
