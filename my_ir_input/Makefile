@@ -8,10 +8,10 @@
 obj-m := my_ir_input_drv.o
 
 # Userspace application
-# APP := my_ir_key_application
+APP := my_ir_key_application
 
 # Optional: for cross compile, override with make CC=...
-# CC := $(CROSS_COMPILE)gcc
+CC := $(CROSS_COMPILE)gcc
 
 # Should set cross-compile env before make
 # export ARCH=arm
@@ -23,8 +23,8 @@ obj-m := my_ir_input_drv.o
 # compile my_gpio_key_application
 all:
 	make -C $(KERN_DIR) M=$(PWD) modules
-#	$(CC) $(APP).c -o $(APP)
+	$(CC) $(APP).c -o $(APP)
 
 clean:
 	make -C $(KERN_DIR) M=$(PWD) clean
-#	$(RM) $(APP)
+	$(RM) $(APP)

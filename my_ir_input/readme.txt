@@ -1,5 +1,5 @@
 Usage:
-./my_ir_key_application /dev/input/eventx
+./my_ir_key_application /dev/input/event3
 
 note:
 dts

@@ -7,6 +7,7 @@
 #include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/version.h>
+#include <media/rc-map.h>
 
 #define my_ir_info(fmt, ...) pr_info("[MY_IR_INPUT]: " fmt, ##__VA_ARGS__)
 #define my_ir_err(fmt, ...) pr_err("[MY_IR_INPUT]: " fmt, ##__VA_ARGS__)
@@ -22,6 +23,33 @@
 
 struct gpio_desc *g_ir_gpio_pin;
 static int g_irq;
+
+static struct rc_map_table hs0038_nec_map[] = {
+    {0x45, KEY_POWER},    {0x47, KEY_MENU},
+
+    {0x44, KEY_T},                          // Test
+    {0x40, KEY_VOLUMEUP}, {0x43, KEY_BACK}, // RETURN
+
+    {0x07, KEY_LAST},     {0x15, KEY_PLAYPAUSE},  {0x09, KEY_NEXT},
+
+    {0x16, KEY_0},        {0x19, KEY_VOLUMEDOWN}, {0x0d, KEY_C},
+
+    {0x0c, KEY_1},        {0x18, KEY_2},          {0x5e, KEY_3},
+    {0x08, KEY_4},        {0x1c, KEY_5},          {0x5a, KEY_6},
+    {0x42, KEY_7},        {0x52, KEY_8},          {0x4a, KEY_9},
+};
+
+int find_keycode_from_scancode(u16 scancode) {
+  int i;
+  for (i = 0; i < ARRAY_SIZE(hs0038_nec_map); i++) {
+    if (hs0038_nec_map[i].scancode == scancode) {
+      return hs0038_nec_map[i].keycode;
+    }
+  }
+  return -1; // Not found
+}
+
+static struct input_dev *g_ir_input_dev;
 
 enum MY_IR_RAWDATA_RES {
   MY_IR_RAWDATA_DATA = 0,
@@ -75,7 +103,7 @@ void my_ir_rawdata_reset(struct my_ir_rawdata *raw_data) {
   for (i = 0; i < EDGE_MAX; i++) {
     raw_data->edges_timestamp[i] = 0;
   }
-  //raw_data->raw_data = 0;
+  // raw_data->raw_data = 0;
   raw_data->edge_cnt = 0;
 }
 
@@ -135,6 +163,7 @@ enum MY_IR_RAWDATA_RES my_ir_rawdata_parse(struct my_ir_rawdata *raw_data) {
 }
 
 static irqreturn_t my_ir_isr(int irq, void *dev_id) {
+  int keycode = -1;
   enum MY_IR_RAWDATA_RES res;
   my_ir_rawdata_save_edge(&g_my_ir_rawdata);
   res = my_ir_rawdata_parse(&g_my_ir_rawdata);
@@ -142,10 +171,22 @@ static irqreturn_t my_ir_isr(int irq, void *dev_id) {
   case MY_IR_RAWDATA_DATA:
     my_ir_info("Received data: %02x\n", g_my_ir_rawdata.raw_data);
     my_ir_rawdata_reset(&g_my_ir_rawdata);
+    keycode = find_keycode_from_scancode(g_my_ir_rawdata.raw_data);
+    if (keycode >= 0) {
+      input_event(g_ir_input_dev, EV_KEY, keycode, 1);
+      input_event(g_ir_input_dev, EV_KEY, keycode, 0);
+      input_sync(g_ir_input_dev);
+    }
     break;
   case MY_IR_RAWDATA_REPEAT:
     my_ir_info("Received repeat data: %02x\n", g_my_ir_rawdata.raw_data);
     my_ir_rawdata_reset(&g_my_ir_rawdata);
+    keycode = find_keycode_from_scancode(g_my_ir_rawdata.raw_data);
+    if (keycode >= 0) {
+      input_event(g_ir_input_dev, EV_KEY, keycode, 1);
+      input_event(g_ir_input_dev, EV_KEY, keycode, 0);
+      input_sync(g_ir_input_dev);
+    }
     break;
   case MY_IR_RAWDATA_ERR:
     my_ir_err("Error parsing raw data\n");
@@ -166,7 +207,7 @@ static const struct of_device_id my_ir_input_dt_match[] = {
 };
 
 static int my_ir_input_probe(struct platform_device *pdev) {
-  int ret = -1;
+  int ret = -1, i = 0;
   my_ir_info("probe...\n");
 
   g_ir_gpio_pin = gpiod_get(&pdev->dev, "my", 0);
@@ -181,6 +222,29 @@ static int my_ir_input_probe(struct platform_device *pdev) {
   if (ret) {
     my_ir_err("Failed to request IRQ %d for GPIO %d\n", g_irq,
               desc_to_gpio(g_ir_gpio_pin));
+    gpiod_put(g_ir_gpio_pin);
+    return ret;
+  }
+
+  // allocate input device
+  g_ir_input_dev = devm_input_allocate_device(&pdev->dev);
+
+  // set input device properties
+  g_ir_input_dev->name = "My IR Input Device Name";
+  g_ir_input_dev->phys = "my_ir_input/input0";
+  __set_bit(EV_KEY, g_ir_input_dev->evbit); // enable key events
+  __set_bit(EV_REP, g_ir_input_dev->evbit); // enable repeat events
+
+  // set key mappings
+  for (i = 0; i < ARRAY_SIZE(hs0038_nec_map); i++) {
+    __set_bit(hs0038_nec_map[i].keycode, g_ir_input_dev->keybit);
+  }
+
+  // register the input device
+  ret = input_register_device(g_ir_input_dev);
+  if (ret) {
+    my_ir_err("Failed to register input device\n");
+    free_irq(g_irq, NULL);
     gpiod_put(g_ir_gpio_pin);
     return ret;
   }
