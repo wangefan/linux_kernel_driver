@@ -3,20 +3,158 @@
 #include <linux/interrupt.h>
 #include <linux/irq.h>
 #include <linux/kernel.h>
+#include <linux/ktime.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
+#include <linux/version.h>
 
 #define my_ir_info(fmt, ...) pr_info("[MY_IR_INPUT]: " fmt, ##__VA_ARGS__)
 #define my_ir_err(fmt, ...) pr_err("[MY_IR_INPUT]: " fmt, ##__VA_ARGS__)
 
 #define DRIVER_NAME "my_ir_input_driver_name"
+#define EDGE_MAX 80
+#define TIMEOUT_NS 60000000       // 60ms
+#define HEAD_DIFF_NS 9000000      // 9ms
+#define TAIL_LEAD_DIFF_NS 4500000 // 4.5ms
+#define TAIL_REP_DIFF_NS 2250000  // 2.25ms
+#define TAIL_VAL_1_NS 1690000     // 2.25ms - 0.56ms = 1.69ms
+#define TOR_NS 800000             // 0.8ms
 
 struct gpio_desc *g_ir_gpio_pin;
 static int g_irq;
 
+enum MY_IR_RAWDATA_RES {
+  MY_IR_RAWDATA_DATA = 0,
+  MY_IR_RAWDATA_REPEAT = 1,
+  MY_IR_RAWDATA_NOTHING = 2,
+  MY_IR_RAWDATA_ERR = -1,
+};
+struct my_ir_rawdata {
+  unsigned int raw_data;
+  int edge_cnt;
+  u64 edges_timestamp[EDGE_MAX];
+};
+
+struct my_ir_rawdata g_my_ir_rawdata = {
+    .raw_data = 0,
+    .edge_cnt = 0,
+    .edges_timestamp = {0},
+};
+
+int is_in_range(u64 ns_value, u64 ns_min, u64 ns_max) {
+  return (ns_value >= ns_min && ns_value <= ns_max);
+}
+
+void my_ir_rawdata_save_edge(struct my_ir_rawdata *raw_data) {
+  if (raw_data->edge_cnt + 1 >= EDGE_MAX) {
+    my_ir_err("Edge count exceeded maximum limit of %d\n", EDGE_MAX);
+    return;
+  }
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0))
+  raw_data->edges_timestamp[raw_data->edge_cnt++] = ktime_get_boottime_ns();
+#else
+  raw_data->edges_timestamp[raw_data->edge_cnt++] = ktime_get_boot_ns();
+#endif
+
+  if (raw_data->edge_cnt >= 2) {
+    // timeout
+    if (raw_data->edges_timestamp[raw_data->edge_cnt - 1] -
+            raw_data->edges_timestamp[raw_data->edge_cnt - 2] >
+        TIMEOUT_NS) {
+      raw_data->edges_timestamp[0] =
+          raw_data->edges_timestamp[raw_data->edge_cnt - 1];
+      raw_data->edge_cnt = 1;
+      return;
+    }
+  }
+}
+
+void my_ir_rawdata_reset(struct my_ir_rawdata *raw_data) {
+  int i;
+  for (i = 0; i < EDGE_MAX; i++) {
+    raw_data->edges_timestamp[i] = 0;
+  }
+  //raw_data->raw_data = 0;
+  raw_data->edge_cnt = 0;
+}
+
+enum MY_IR_RAWDATA_RES my_ir_rawdata_parse(struct my_ir_rawdata *raw_data) {
+  u64 head_diff = 0, tail_diff = 0, edges_timestamp_idx1 = 0,
+      edges_timestamp_idx2 = 0;
+  const int data_cnt = 4;
+  unsigned char data[data_cnt];
+  int data_idx = 0, bit_idx = 0;
+  memset(data, 0, data_cnt);
+  if (raw_data->edge_cnt < 4) {
+    return MY_IR_RAWDATA_NOTHING;
+  }
+
+  head_diff = raw_data->edges_timestamp[1] - raw_data->edges_timestamp[0];
+  tail_diff = raw_data->edges_timestamp[2] - raw_data->edges_timestamp[1];
+
+  // repeat
+  if (is_in_range(head_diff, HEAD_DIFF_NS - TOR_NS, HEAD_DIFF_NS + TOR_NS) &&
+      is_in_range(tail_diff, TAIL_REP_DIFF_NS - TOR_NS,
+                  TAIL_REP_DIFF_NS + TOR_NS)) {
+    return MY_IR_RAWDATA_REPEAT;
+  }
+
+  // data
+  if (raw_data->edge_cnt >= 68) {
+
+    for (data_idx = 0; data_idx < data_cnt; ++data_idx) {
+      edges_timestamp_idx1 = 3 + data_idx * 16;
+      edges_timestamp_idx2 = 4 + data_idx * 16;
+      for (bit_idx = 0; bit_idx < 8; ++bit_idx) {
+        tail_diff = raw_data->edges_timestamp[edges_timestamp_idx2] -
+                    raw_data->edges_timestamp[edges_timestamp_idx1];
+        if (is_in_range(tail_diff, TAIL_VAL_1_NS - TOR_NS,
+                        TAIL_VAL_1_NS + TOR_NS)) {
+          data[data_idx] |= (1 << bit_idx); // bit is 1
+        }
+        edges_timestamp_idx1 += 2;
+        edges_timestamp_idx2 += 2;
+      }
+    }
+
+    // check data integrity
+    data[1] = ~data[1];
+    data[3] = ~data[3];
+    if (data[0] != data[1] || data[2] != data[3]) {
+      my_ir_err("Data integrity check failed: %02x:%02x:%02x:%02x\n", data[0],
+                data[1], data[2], data[3]);
+      return MY_IR_RAWDATA_ERR;
+    }
+
+    raw_data->raw_data = (data[0] << 8) | data[2];
+    return MY_IR_RAWDATA_DATA;
+  }
+
+  return MY_IR_RAWDATA_NOTHING;
+}
+
 static irqreturn_t my_ir_isr(int irq, void *dev_id) {
-  my_ir_info("IR interrupt triggered on GPIO %d\n",
-             desc_to_gpio(g_ir_gpio_pin));
+  enum MY_IR_RAWDATA_RES res;
+  my_ir_rawdata_save_edge(&g_my_ir_rawdata);
+  res = my_ir_rawdata_parse(&g_my_ir_rawdata);
+  switch (res) {
+  case MY_IR_RAWDATA_DATA:
+    my_ir_info("Received data: %02x\n", g_my_ir_rawdata.raw_data);
+    my_ir_rawdata_reset(&g_my_ir_rawdata);
+    break;
+  case MY_IR_RAWDATA_REPEAT:
+    my_ir_info("Received repeat data: %02x\n", g_my_ir_rawdata.raw_data);
+    my_ir_rawdata_reset(&g_my_ir_rawdata);
+    break;
+  case MY_IR_RAWDATA_ERR:
+    my_ir_err("Error parsing raw data\n");
+    my_ir_rawdata_reset(&g_my_ir_rawdata);
+    break;
+  case MY_IR_RAWDATA_NOTHING:
+    break;
+  }
+
   return IRQ_HANDLED;
 }
 
