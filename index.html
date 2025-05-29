@@ -81,6 +81,50 @@
 </head>
 
 <body>
+  <details>
+    <summary>Input subsystem - "IR signal decode"</summary>
+    <details open>
+      <summary>HW setting</summary>
+      <img src="resources/hw_settings_ir.jpg" alt="Hardware setting for IR" />
+    </details>
+
+    <details open>
+      <summary>NEC protocol</summary>
+      <img src="resources/02_data_seq.png" alt="Input subsystem" />
+      <img src="resources/03_pre_wave.png" alt="Input subsystem" />
+      <img src="resources/04_data_wave.png" alt="Input subsystem" />
+      <img src="resources/05_repeat_wave.png" alt="Input subsystem" />
+    </details>
+    <details open>
+      <summary>check data integrity note</summary>
+      <pre>
+data[0] != ~data[1]
+// 假設data[1] == 0xff
+// 此時~data[1] == 0xffffff00
+// 運算過程如下：
+~data[1] => ~((int)0x000000ff) = 0xffffff00
+      </pre>
+      所以比較好的作法是：
+      <pre>
+data[1] = ~data[1];
+check data[0] == data[1];
+      </pre>
+    </details>
+    <details open>
+      <summary>Video demo</summary>
+      <p>
+        <video width="640" controls>
+          <source src="resources/ir_demo.mp4" type="video/mp4">
+          Your browser does not support the video tag.
+        </video>
+      </p>
+    </details>
+    <details open>
+      <summary>Source code</summary>
+      <p><a href="https://github.com/wangefan/linux_kernel_driver/tree/gh-pages/my_ir_input" target="_blank">View source
+          code</a></p>
+    </details>
+  </details>
 
   <details>
     <summary>EEPROM Driver - "AT24C02"</summary>
